@@ -17,8 +17,11 @@ const internal_ip_1 = __importDefault(require("internal-ip"));
  * @function getDefaultServerHost
  * @since 0.1.0
  */
-function getDefaultServerHost() {
+function getDefaultServerHost(defaultHost) {
     return __awaiter(this, void 0, void 0, function* () {
+        if (defaultHost) {
+            return defaultHost;
+        }
         let host = yield internal_ip_1.default.v4();
         if (host == null) {
             host = 'localhost';

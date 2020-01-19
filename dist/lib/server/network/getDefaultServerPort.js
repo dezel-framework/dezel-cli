@@ -17,9 +17,9 @@ const get_port_1 = __importDefault(require("get-port"));
  * @function getDefaultServerPort
  * @since 0.1.0
  */
-function getDefaultServerPort(port) {
+function getDefaultServerPort(defaultPort) {
     return __awaiter(this, void 0, void 0, function* () {
-        return get_port_1.default({ port });
+        return get_port_1.default({ port: defaultPort });
     });
 }
 exports.getDefaultServerPort = getDefaultServerPort;

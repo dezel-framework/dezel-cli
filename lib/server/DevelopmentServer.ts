@@ -1,10 +1,12 @@
 import chalk from 'chalk'
 import path from 'path'
 import http, { Server } from 'http'
+import { setFlagsFromString } from 'v8'
 import { Server as WebSocketServer } from 'ws'
 import { getDefaultServerHost } from './network/getDefaultServerHost'
 import { getDefaultServerPort } from './network/getDefaultServerPort'
 import { Bundler } from './bundler/Bundler'
+import { BundlerOptions } from './bundler/Bundler'
 
 /**
  * @interface DevelopmentServerOptions
@@ -63,7 +65,7 @@ export class DevelopmentServer {
 	//--------------------------------------------------------------------------
 
 	/**
-	 * @constructors
+	 * @constructor
 	 * @since 1.0.0
 	 */
 	constructor(options: DevelopmentServerOptions) {
@@ -72,23 +74,28 @@ export class DevelopmentServer {
 		this.publicPath = options.publicPath
 		this.outputName = options.outputName
 
-		let port = options.port
+		let port = options.port || 8080
 		let host = options.host
 
 		Promise.all([
 
-			getDefaultServerHost(),
-			getDefaultServerPort(8080)
+			getDefaultServerHost(host),
+			getDefaultServerPort(port)
 
 		]).then(([defaultHost, defaultPort]) => {
 
-			this.host = host || defaultHost
+			this.host = defaultHost
 			this.port = defaultPort
 
-			let client = path.join(__dirname, 'reload/client.js')
+			let options: BundlerOptions = {
+				includes: [
+					path.join(__dirname, 'reload/client.js')
+				]
+			}
 
-			this.bundler = new Bundler(this, [client])
-			this.bundler.on('update', this.onBundleUpdate.bind(this))
+			this.bundler = new Bundler(this, options)
+			this.bundler.on('update', this.onBundlerUpdate.bind(this))
+			this.bundler.on('error', this.onBundlerError.bind(this))
 
 			this.start()
 		})
@@ -136,11 +143,12 @@ export class DevelopmentServer {
 			() => {
 
 				console.log(chalk.green('Dezel development server started'))
-				console.log(' -> File:        ' + chalk.blue(this.file))
+				console.log(' -> Input file:  ' + chalk.blue(this.file))
 				console.log(' -> Host:        ' + chalk.blue(this.host))
 				console.log(' -> Port:        ' + chalk.blue(this.port))
 				console.log(' -> Public path: ' + chalk.blue(this.publicPath))
 				console.log(' -> Output name: ' + chalk.blue(this.outputName))
+				console.log('')
 
 			}
 		)
@@ -149,34 +157,50 @@ export class DevelopmentServer {
 	}
 
 	/**
-	 * @method send
+	 * @method reload
 	 * @since 0.1.0
 	 * @hidden
 	 */
-	private send(data: object) {
+	private reload(type: 'scripts' | 'styles', message: string) {
 
-		let string = JSON.stringify(data)
+		let action: string
+
+		switch (type) {
+
+			case 'scripts':
+				action = 'reload'
+				break
+
+			case 'styles':
+				action = 'reload-styles'
+				break
+
+			default:
+				throw new Error('Unexpected error.')
+		}
+
+		console.log(chalk.blue(' -> ' + message))
 
 		try {
 
+			let data = JSON.stringify({ action })
+
 			this.socket.clients.forEach(client => {
-				if (client.readyState === client.OPEN) {
-					client.send(string, { binary: false })
-				}
+				client.send(data, { binary: false })
 			})
 
 		} catch (err) {
-			console.error('Error sending LiveReload event to client:')
+			console.error('Error sending reload message to the client:')
 			console.error(err)
 		}
 	}
 
 	/**
-	 * @method onBundleUpdate
+	 * @method onBundlerUpdate
 	 * @since 0.1.0
 	 * @hidden
 	 */
-	private onBundleUpdate(files: Array<string>) {
+	private onBundlerUpdate(files: Array<string>) {
 
 		console.log(chalk.green('Bundle updated:'))
 		console.log(
@@ -190,11 +214,19 @@ export class DevelopmentServer {
 		)
 
 		if (styles) {
-			console.log(chalk.blue(' -> Reloading styles...'))
-			this.send({ action: 'reload-styles' })
-		} else {
-			console.log(chalk.blue(' -> Reloading...'))
-			this.send({ action: 'reload' })
+			this.reload('styles', 'Reloading styles')
+			return
 		}
+
+		this.reload('scripts', 'Reloading')
+	}
+
+	/**
+	 * @method onBundlerError
+	 * @since 0.1.0
+	 * @hidden
+	 */
+	private onBundlerError(error: Error) {
+		console.error(chalk.red(error.stack || error.message || error))
 	}
 }

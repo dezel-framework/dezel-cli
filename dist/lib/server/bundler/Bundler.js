@@ -10,6 +10,8 @@ const url_1 = __importDefault(require("url"));
 const watchify_middleware_1 = __importDefault(require("watchify-middleware"));
 const browserify_1 = __importDefault(require("browserify"));
 const events_1 = require("events");
+const Asset_1 = require("../asset/Asset");
+const Asset_2 = require("../asset/Asset");
 /**
  * @class Bundler
  * @since 0.1.0
@@ -22,7 +24,7 @@ class Bundler extends events_1.EventEmitter {
      * @constructor
      * @since 0.1.0
      */
-    constructor(server, includes = []) {
+    constructor(server, options = {}) {
         super();
         //--------------------------------------------------------------------------
         // Private API
@@ -32,31 +34,26 @@ class Bundler extends events_1.EventEmitter {
          * @since 0.1.0
          * @hidden
          */
-        this.assets = {};
+        this.assets = new Map();
+        /**
+         * @property bundle
+         * @since 0.1.0
+         * @hidden
+         */
+        this.bundle = {};
         this.server = server;
-        let base = this.server.outputName;
-        if (base == '') {
-            base = 'app';
-        }
-        this.assets[base + '.style.ios'] = '';
-        this.assets[base + '.style.android'] = '';
         this.createBundler();
         this.createWatcher();
-        for (let file of includes) {
-            this.bundler.add(file);
+        let includes = options.includes;
+        if (includes) {
+            includes.forEach(file => this.bundler.add(file));
         }
-        this.bundler.on('update', (ids) => {
-            this.emit('update', ids);
-        });
     }
     /**
      * @method resolve
      * @since 0.1.0
      */
     resolve(req, res) {
-        if (req.url == null) {
-            return;
-        }
         let resource = url_1.default.parse(req.url).pathname;
         if (resource == null) {
             return;
@@ -70,10 +67,11 @@ class Bundler extends events_1.EventEmitter {
             res.end();
             return;
         }
-        if (type.match(/style(\.[ios|android])?/)) {
-            let source = this.assets[this.server.outputName + '.' + type];
-            if (source) {
-                res.write(source);
+        if (type == 'style.ios' ||
+            type == 'style.android') {
+            let bundle = this.build(type);
+            if (bundle) {
+                res.write(bundle);
                 res.end();
                 return;
             }
@@ -83,12 +81,49 @@ class Bundler extends events_1.EventEmitter {
         }
         this.watcher(req, res);
     }
+    //--------------------------------------------------------------------------
+    // Events
+    //--------------------------------------------------------------------------
     /**
-     * @method include
+     * @method onUpdate
      * @since 0.1.0
+     * @hidden
      */
-    include(file) {
-        this.bundler.add(file);
+    onUpdate(files) {
+        this.bundler.once('bundle', bundle => bundle.once('end', () => this.emit('update', files)));
+    }
+    /**
+     * @method onBundle
+     * @since 0.1.0
+     * @hidden
+     */
+    onBundle(bundle) {
+        this.emit('bundle', bundle);
+    }
+    /**
+     * @method onTransform
+     * @since 0.1.0
+     * @hidden
+     */
+    onTransform(file) {
+        let asset = this.assets.get(file);
+        if (asset == null) {
+            asset = new Asset_1.Asset(file);
+        }
+        if (asset.type != Asset_2.AssetType.STYLE &&
+            asset.type != Asset_2.AssetType.STYLE_IOS &&
+            asset.type != Asset_2.AssetType.STYLE_ANDROID) {
+            return null;
+        }
+        delete this.bundle['style.ios'];
+        delete this.bundle['style.android'];
+        this.assets.set(file, asset);
+        return through2_1.default((data, enc, next) => {
+            asset.data = data;
+            next();
+        }, (done) => {
+            done();
+        });
     }
     /**
      * @method createBundler
@@ -112,9 +147,18 @@ class Bundler extends events_1.EventEmitter {
                 }
             }
         };
+        let transformer = (file) => {
+            let result = this.onTransform(file);
+            if (result == null) {
+                result = through2_1.default();
+            }
+            return result;
+        };
         this.bundler = browserify_1.default(this.server.file, options);
-        this.bundler.transform(file => this.bundle(file));
+        this.bundler.transform(transformer, { global: true });
         this.bundler.plugin(tsify_1.default);
+        this.bundler.on('update', this.onUpdate.bind(this));
+        this.bundler.on('bundle', this.onBundle.bind(this));
         return this;
     }
     /**
@@ -124,42 +168,32 @@ class Bundler extends events_1.EventEmitter {
      */
     createWatcher() {
         this.watcher = watchify_middleware_1.default(this.bundler, {
-        // errorHandler() {
-        // 	console.log('error')
-        // }
+            errorHandler: (error) => this.emit('error', error)
         });
         return this;
     }
     /**
-     * @method bundle
+     * @method build
      * @since 0.1.0
      * @hidden
      */
-    bundle(file) {
-        let anyStyles = /\.style$/;
-        let iosStyles = /\.style\.ios$/;
-        const ANDROID = /\.style\.android$/;
-        let isAnyStyle = !!file.match(/\.style$/);
-        let isIOSStyle = !!file.match(/\.style\.ios$/);
-        let isAndroidSytle = !!file.match(/\.style\.android$/);
-        if (isAnyStyle == false &&
-            isIOSStyle == false &&
-            isAndroidSytle == false) {
-            return through2_1.default();
+    build(type) {
+        let bundle = this.bundle[type];
+        if (bundle) {
+            return bundle;
         }
-        return through2_1.default((chunk, enc, next) => {
-            if (file.match(anyStyles) ||
-                file.match(iosStyles)) {
-                this.assets['app.style.ios'] += chunk;
+        this.bundle[type] = '';
+        Array.from(this.assets.values()).reverse().forEach(asset => {
+            let data = asset.data;
+            if (data) {
+                data += '\n';
             }
-            if (file.match(anyStyles) ||
-                file.match(ANDROID)) {
-                this.assets['app.style.android'] += chunk;
+            if (asset.kind == 'any' ||
+                asset.kind == type) {
+                this.bundle[type] += data;
             }
-            next();
-        }, (done) => {
-            done();
         });
+        return this.bundle[type];
     }
 }
 exports.Bundler = Bundler;

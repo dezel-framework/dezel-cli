@@ -28,24 +28,29 @@ class DevelopmentServer {
     // Methods
     //--------------------------------------------------------------------------
     /**
-     * @constructors
+     * @constructor
      * @since 1.0.0
      */
     constructor(options) {
         this.file = options.file;
         this.publicPath = options.publicPath;
         this.outputName = options.outputName;
-        let port = options.port;
+        let port = options.port || 8080;
         let host = options.host;
         Promise.all([
-            getDefaultServerHost_1.getDefaultServerHost(),
-            getDefaultServerPort_1.getDefaultServerPort(8080)
+            getDefaultServerHost_1.getDefaultServerHost(host),
+            getDefaultServerPort_1.getDefaultServerPort(port)
         ]).then(([defaultHost, defaultPort]) => {
-            this.host = host || defaultHost;
+            this.host = defaultHost;
             this.port = defaultPort;
-            let client = path_1.default.join(__dirname, 'reload/client.js');
-            this.bundler = new Bundler_1.Bundler(this, [client]);
-            this.bundler.on('update', this.onBundleUpdate.bind(this));
+            let options = {
+                includes: [
+                    path_1.default.join(__dirname, 'reload/client.js')
+                ]
+            };
+            this.bundler = new Bundler_1.Bundler(this, options);
+            this.bundler.on('update', this.onBundlerUpdate.bind(this));
+            this.bundler.on('error', this.onBundlerError.bind(this));
             this.start();
         });
     }
@@ -61,53 +66,69 @@ class DevelopmentServer {
             });
             this.server.listen(this.port, this.host, () => {
                 console.log(chalk_1.default.green('Dezel development server started'));
-                console.log(' -> File:        ' + chalk_1.default.blue(this.file));
+                console.log(' -> Input file:  ' + chalk_1.default.blue(this.file));
                 console.log(' -> Host:        ' + chalk_1.default.blue(this.host));
                 console.log(' -> Port:        ' + chalk_1.default.blue(this.port));
                 console.log(' -> Public path: ' + chalk_1.default.blue(this.publicPath));
                 console.log(' -> Output name: ' + chalk_1.default.blue(this.outputName));
+                console.log('');
             });
             this.socket = new ws_1.Server({ server: this.server, perMessageDeflate: false });
         });
     }
     /**
-     * @method send
+     * @method reload
      * @since 0.1.0
      * @hidden
      */
-    send(data) {
-        let string = JSON.stringify(data);
+    reload(type, message) {
+        let action;
+        switch (type) {
+            case 'scripts':
+                action = 'reload';
+                break;
+            case 'styles':
+                action = 'reload-styles';
+                break;
+            default:
+                throw new Error('Unexpected error.');
+        }
+        console.log(chalk_1.default.blue(' -> ' + message));
         try {
+            let data = JSON.stringify({ action });
             this.socket.clients.forEach(client => {
-                if (client.readyState === client.OPEN) {
-                    client.send(string, { binary: false });
-                }
+                client.send(data, { binary: false });
             });
         }
         catch (err) {
-            console.error('Error sending LiveReload event to client:');
+            console.error('Error sending reload message to the client:');
             console.error(err);
         }
     }
     /**
-     * @method onBundleUpdate
+     * @method onBundlerUpdate
      * @since 0.1.0
      * @hidden
      */
-    onBundleUpdate(files) {
+    onBundlerUpdate(files) {
         console.log(chalk_1.default.green('Bundle updated:'));
         console.log(files.map(file => chalk_1.default.red(' -> ') + file).join('\n'));
         let styles = files.every(file => file.match(/\.style$/) ||
             file.match(/\.style\.ios$/) ||
             file.match(/\.style\.android$/));
         if (styles) {
-            console.log(chalk_1.default.blue(' -> Reloading styles...'));
-            this.send({ action: 'reload-styles' });
+            this.reload('styles', 'Reloading styles');
+            return;
         }
-        else {
-            console.log(chalk_1.default.blue(' -> Reloading...'));
-            this.send({ action: 'reload' });
-        }
+        this.reload('scripts', 'Reloading');
+    }
+    /**
+     * @method onBundlerError
+     * @since 0.1.0
+     * @hidden
+     */
+    onBundlerError(error) {
+        console.error(chalk_1.default.red(error.stack || error.message || error));
     }
 }
 exports.DevelopmentServer = DevelopmentServer;

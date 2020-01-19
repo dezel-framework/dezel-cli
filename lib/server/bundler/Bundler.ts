@@ -5,7 +5,17 @@ import url from 'url'
 import watchifyMiddleware from 'watchify-middleware'
 import browserify, { BrowserifyObject } from 'browserify'
 import { EventEmitter } from 'events'
+import { Asset } from '../asset/Asset'
+import { AssetType } from '../asset/Asset'
 import { DevelopmentServer } from '../DevelopmentServer'
+
+/**
+ * @interface BundlerOptions
+ * @since 0.1.0
+ */
+export interface BundlerOptions {
+	includes?: Array<string>
+}
 
 /**
  * @class Bundler
@@ -31,30 +41,19 @@ export class Bundler extends EventEmitter {
 	 * @constructor
 	 * @since 0.1.0
 	 */
-	constructor(server: DevelopmentServer, includes: Array<string> = []) {
+	constructor(server: DevelopmentServer, options: BundlerOptions = {}) {
 
 		super()
 
 		this.server = server
 
-		let base = this.server.outputName
-		if (base == '') {
-			base = 'app'
-		}
-
-		this.assets[base + '.style.ios'] = ''
-		this.assets[base + '.style.android'] = ''
-
 		this.createBundler()
 		this.createWatcher()
 
-		for (let file of includes) {
-			this.bundler.add(file)
+		let includes = options.includes
+		if (includes) {
+			includes.forEach(file => this.bundler.add(file))
 		}
-
-		this.bundler.on('update', (ids: any) => {
-			this.emit('update', ids)
-		})
 	}
 
 	/**
@@ -63,11 +62,7 @@ export class Bundler extends EventEmitter {
 	 */
 	public resolve(req: Request, res: Response) {
 
-		if (req.url == null) {
-			return
-		}
-
-		let resource = url.parse(req.url).pathname
+		let resource = url.parse(req.url!).pathname
 		if (resource == null) {
 			return
 		}
@@ -82,37 +77,85 @@ export class Bundler extends EventEmitter {
 
 		if (this.server.publicPath != path ||
 			this.server.outputName != name) {
-
 			res.writeHead(404)
 			res.end()
-
 			return
 		}
 
-		if (type.match(/style(\.[ios|android])?/)) {
+		if (type == 'style.ios' ||
+			type == 'style.android') {
 
-			let source = this.assets[this.server.outputName + '.' + type]
-			if (source) {
-				res.write(source)
+			let bundle = this.build(type)
+			if (bundle) {
+				res.write(bundle)
 				res.end()
 				return
 			}
 
 			res.writeHead(404)
 			res.end()
-
 			return
 		}
 
 		this.watcher(req, res)
 	}
 
+	//--------------------------------------------------------------------------
+	// Events
+	//--------------------------------------------------------------------------
+
 	/**
-	 * @method include
+	 * @method onUpdate
 	 * @since 0.1.0
+	 * @hidden
 	 */
-	public include(file: string) {
-		this.bundler.add(file)
+	protected onUpdate(files: Array<string>) {
+		this.bundler.once('bundle', bundle => bundle.once('end', () => this.emit('update', files)))
+	}
+
+	/**
+	 * @method onBundle
+	 * @since 0.1.0
+	 * @hidden
+	 */
+	protected onBundle(bundle: NodeJS.ReadableStream) {
+		this.emit('bundle', bundle)
+	}
+
+	/**
+	 * @method onTransform
+	 * @since 0.1.0
+	 * @hidden
+	 */
+	protected onTransform(file: string) {
+
+		let asset = this.assets.get(file)
+		if (asset == null) {
+			asset = new Asset(file)
+		}
+
+		if (asset.type != AssetType.STYLE &&
+			asset.type != AssetType.STYLE_IOS &&
+			asset.type != AssetType.STYLE_ANDROID) {
+			return null
+		}
+
+		delete this.bundle['style.ios']
+		delete this.bundle['style.android']
+
+		this.assets.set(file, asset)
+
+		return through(
+
+			(data, enc, next) => {
+				asset!.data = data
+				next()
+			},
+
+			(done) => {
+				done()
+			}
+		)
 	}
 
 	//--------------------------------------------------------------------------
@@ -124,7 +167,14 @@ export class Bundler extends EventEmitter {
 	 * @since 0.1.0
 	 * @hidden
 	 */
-	private assets: Dictionary<string> = {}
+	private assets: Map<string, Asset> = new Map()
+
+	/**
+	 * @property bundle
+	 * @since 0.1.0
+	 * @hidden
+	 */
+	private bundle: Dictionary<string> = {}
 
 	/**
 	 * @property bundler
@@ -165,9 +215,22 @@ export class Bundler extends EventEmitter {
 			}
 		}
 
+		let transformer = (file: string) => {
+
+			let result = this.onTransform(file)
+			if (result == null) {
+				result = through()
+			}
+
+			return result
+		}
+
 		this.bundler = browserify(this.server.file, options)
-		this.bundler.transform(file => this.bundle(file))
+		this.bundler.transform(transformer, { global: true })
 		this.bundler.plugin(tsify)
+
+		this.bundler.on('update', this.onUpdate.bind(this))
+		this.bundler.on('bundle', this.onBundle.bind(this))
 
 		return this
 	}
@@ -180,56 +243,39 @@ export class Bundler extends EventEmitter {
 	private createWatcher() {
 
 		this.watcher = watchifyMiddleware(this.bundler, {
-			// errorHandler() {
-			// 	console.log('error')
-			// }
+			errorHandler: (error: Error) => this.emit('error', error)
 		})
 
 		return this
 	}
 
 	/**
-	 * @method bundle
+	 * @method build
 	 * @since 0.1.0
 	 * @hidden
 	 */
-	private bundle(file: string) {
+	private build(type: string) {
 
-		let anyStyles = /\.style$/
-		let iosStyles = /\.style\.ios$/
-		const ANDROID = /\.style\.android$/
-
-		let isAnyStyle = !!file.match(/\.style$/)
-		let isIOSStyle = !!file.match(/\.style\.ios$/)
-		let isAndroidSytle = !!file.match(/\.style\.android$/)
-
-		if (isAnyStyle == false &&
-			isIOSStyle == false &&
-			isAndroidSytle == false) {
-			return through()
+		let bundle = this.bundle[type]
+		if (bundle) {
+			return bundle
 		}
 
+		this.bundle[type] = ''
 
-		return through(
+		Array.from(this.assets.values()).reverse().forEach(asset => {
 
-			(chunk, enc, next) => {
-
-				if (file.match(anyStyles) ||
-					file.match(iosStyles)) {
-					this.assets['app.style.ios'] += chunk
-				}
-
-				if (file.match(anyStyles) ||
-					file.match(ANDROID)) {
-					this.assets['app.style.android'] += chunk
-				}
-
-				next()
-			},
-
-			(done) => {
-				done()
+			let data = asset.data
+			if (data) {
+				data += '\n'
 			}
-		)
+
+			if (asset.kind == 'any' ||
+				asset.kind == type) {
+				this.bundle[type] += data
+			}
+		})
+
+		return this.bundle[type]
 	}
 }
