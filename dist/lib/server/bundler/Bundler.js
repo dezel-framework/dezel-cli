@@ -182,18 +182,13 @@ class Bundler extends events_1.EventEmitter {
         if (bundle) {
             return bundle;
         }
-        this.bundle[type] = '';
-        Array.from(this.assets.values()).reverse().forEach(asset => {
-            let data = asset.data;
-            if (data) {
-                data += '\n';
-            }
-            if (asset.kind == 'any' ||
-                asset.kind == type) {
-                this.bundle[type] += data;
-            }
-        });
-        return this.bundle[type];
+        let filter = (asset) => {
+            return asset.kind == 'any' || asset.kind == type;
+        };
+        let mapper = (asset) => {
+            return asset.data;
+        };
+        return this.bundle[type] = Array.from(this.assets.values()).filter(filter).map(mapper).reverse().join('\n');
     }
 }
 exports.Bundler = Bundler;

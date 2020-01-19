@@ -261,21 +261,14 @@ export class Bundler extends EventEmitter {
 			return bundle
 		}
 
-		this.bundle[type] = ''
+		let filter = (asset: Asset) => {
+			return asset.kind == 'any' || asset.kind == type
+		}
 
-		Array.from(this.assets.values()).reverse().forEach(asset => {
+		let mapper = (asset: Asset) => {
+			return asset.data
+		}
 
-			let data = asset.data
-			if (data) {
-				data += '\n'
-			}
-
-			if (asset.kind == 'any' ||
-				asset.kind == type) {
-				this.bundle[type] += data
-			}
-		})
-
-		return this.bundle[type]
+		return this.bundle[type] = Array.from(this.assets.values()).filter(filter).map(mapper).reverse().join('\n')
 	}
 }
