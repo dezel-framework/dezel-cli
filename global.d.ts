@@ -1,4 +1,5 @@
 declare module 'tsify'
+declare module 'tinyify'
 declare module 'watchify'
 declare module 'watchify-middleware'
 declare module 'stacked'

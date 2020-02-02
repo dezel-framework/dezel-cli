@@ -13,13 +13,13 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const path_1 = __importDefault(require("path"));
+const Bundler_1 = require("../lib/bundler/Bundler");
 const Command_1 = require("../lib/command/Command");
-const DevelopmentServer_1 = require("../lib/server/DevelopmentServer");
 /**
- * @class Watch
+ * @class Build
  * @since 0.1.0
  */
-class Watch extends Command_1.Command {
+class Build extends Command_1.Command {
     /**
      * @inherited
      * @method execute
@@ -27,21 +27,31 @@ class Watch extends Command_1.Command {
      */
     execute(options) {
         return __awaiter(this, void 0, void 0, function* () {
-            if (options.file) {
-                options.file = path_1.default.join(process.cwd(), options.file);
+            let { file, outputPath, outputName } = options;
+            if (file) {
+                file = path_1.default.join(process.cwd(), file);
             }
             else {
-                options.file = path_1.default.join(process.cwd(), '/src/index.ts');
+                file = path_1.default.join(process.cwd(), '/src/index.ts');
             }
-            new DevelopmentServer_1.DevelopmentServer({
-                file: options.file,
-                host: options.host,
-                port: options.port,
-                publicPath: options.publicPath || '/',
-                outputName: options.outputName || 'app'
+            if (outputPath) {
+                outputPath = path_1.default.join(process.cwd(), outputPath);
+            }
+            else {
+                outputPath = path_1.default.join(process.cwd(), 'app');
+            }
+            if (outputName == null) {
+                outputName = 'app';
+            }
+            let bundler = new Bundler_1.Bundler({
+                file,
+                outputPath,
+                outputName,
+                minify: false
             });
+            bundler.bundle();
             return null;
         });
     }
 }
-exports.default = Watch;
+exports.default = Build;

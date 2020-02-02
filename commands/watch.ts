@@ -1,7 +1,6 @@
-import { isUndefined } from 'util'
+import path from 'path'
 import { Command } from '../lib/command/Command'
 import { DevelopmentServer } from '../lib/server/DevelopmentServer'
-import { DevelopmentServerOptions } from '../lib/server/DevelopmentServer'
 
 /**
  * @class Watch
@@ -16,8 +15,14 @@ export default class Watch extends Command {
 	 */
 	public async execute(options: any) {
 
+		if (options.file) {
+			options.file = path.join(process.cwd(), options.file)
+		} else {
+			options.file = path.join(process.cwd(), '/src/index.ts')
+		}
+
 		new DevelopmentServer({
-			file: options.file || process.cwd() + '/src/index.ts',
+			file: options.file,
 			host: options.host,
 			port: options.port,
 			publicPath: options.publicPath || '/',

@@ -1,12 +1,11 @@
 import chalk from 'chalk'
 import path from 'path'
 import http, { Server } from 'http'
-import { setFlagsFromString } from 'v8'
 import { Server as WebSocketServer } from 'ws'
 import { getDefaultServerHost } from './network/getDefaultServerHost'
 import { getDefaultServerPort } from './network/getDefaultServerPort'
-import { Bundler } from './bundler/Bundler'
-import { BundlerOptions } from './bundler/Bundler'
+import { BundlerOptions } from '../bundler/Bundler'
+import { DevelopmentBundler } from './bundler/DevelopmentBundler'
 
 /**
  * @interface DevelopmentServerOptions
@@ -87,13 +86,32 @@ export class DevelopmentServer {
 			this.host = defaultHost
 			this.port = defaultPort
 
-			let options: BundlerOptions = {
-				includes: [
-					path.join(__dirname, 'reload/client.js')
-				]
+			let devServer = {
+				host: this.host,
+				port: this.port,
+				publicPath: this.publicPath,
+				outputName: this.outputName
 			}
 
-			this.bundler = new Bundler(this, options)
+			let options: BundlerOptions = {
+
+				file: this.file,
+				outputName: this.outputName,
+				outputPath: this.publicPath,
+				minify: false,
+
+				includes: [
+					path.join(__dirname, 'reload/client.js')
+				],
+
+				variables: {
+					devServer: function () {
+						return JSON.stringify(devServer)
+					}
+				}
+			}
+
+			this.bundler = new DevelopmentBundler(this, options)
 			this.bundler.on('update', this.onBundlerUpdate.bind(this))
 			this.bundler.on('error', this.onBundlerError.bind(this))
 
@@ -124,7 +142,7 @@ export class DevelopmentServer {
 	 * @since 0.1.0
 	 * @hidden
 	 */
-	private bundler: Bundler
+	private bundler: DevelopmentBundler
 
 	/**
 	 * @method start
@@ -142,7 +160,8 @@ export class DevelopmentServer {
 			this.host,
 			() => {
 
-				console.log(chalk.green('Dezel development server started'))
+				console.log(chalk.green('Development server started'))
+				console.log('')
 				console.log(' -> Input file:  ' + chalk.blue(this.file))
 				console.log(' -> Host:        ' + chalk.blue(this.host))
 				console.log(' -> Port:        ' + chalk.blue(this.port))

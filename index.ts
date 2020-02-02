@@ -20,8 +20,34 @@ export function cli(args: Array<string>) {
 		.option('-p, --port [port]', 'The development server port, defaults to 8080.')
 		.option('--public-path [publicPath]', 'The path that the assets will be served at, defaults to /')
 		.option('--output-name [outputName]', 'The name that will prefix outputed file, defaults to app')
-		.action((options) => {
+		.action(options => {
 			run('./commands/watch', options)
+		})
+
+	/**
+	 * @command build
+	 * @since 0.1.0
+	 */
+	program
+		.command('build')
+		.option('-f, --file [file]', 'The main TS file, defaults to src/index.ts')
+		.option('-o, --output-path [outputPath]', 'The output directory, defaults to app/')
+		.option('-n, --output-name [outputName]', 'The name that will prefix outputed file, defaults to app')
+		.action(options => {
+			run('./commands/build', options)
+		})
+
+	/**
+	 * @command build:prod
+	 * @since 0.1.0
+	 */
+	program
+		.command('build:prod')
+		.option('-f, --file [file]', 'The main TS file, defaults to src/index.ts')
+		.option('-o, --output-path [outputPath]', 'The output directory, defaults to app/')
+		.option('-n, --output-name [outputName]', 'The name that will prefix outputed file, defaults to app')
+		.action(options => {
+			run('./commands/build-prod', options)
 		})
 
 	if (args.length) {

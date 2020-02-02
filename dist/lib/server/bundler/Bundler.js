@@ -10,8 +10,8 @@ const url_1 = __importDefault(require("url"));
 const watchify_middleware_1 = __importDefault(require("watchify-middleware"));
 const browserify_1 = __importDefault(require("browserify"));
 const events_1 = require("events");
-const Asset_1 = require("../asset/Asset");
-const Asset_2 = require("../asset/Asset");
+const Asset_1 = require("../../asset/Asset");
+const Asset_2 = require("../../asset/Asset");
 /**
  * @class Bundler
  * @since 0.1.0
@@ -36,11 +36,11 @@ class Bundler extends events_1.EventEmitter {
          */
         this.assets = new Map();
         /**
-         * @property bundle
+         * @property styles
          * @since 0.1.0
          * @hidden
          */
-        this.bundle = {};
+        this.styles = {};
         this.server = server;
         this.createBundler();
         this.createWatcher();
@@ -115,8 +115,8 @@ class Bundler extends events_1.EventEmitter {
             asset.type != Asset_2.AssetType.STYLE_ANDROID) {
             return null;
         }
-        delete this.bundle['style.ios'];
-        delete this.bundle['style.android'];
+        delete this.styles['style.ios'];
+        delete this.styles['style.android'];
         this.assets.set(file, asset);
         return through2_1.default((data, enc, next) => {
             asset.data = data;
@@ -178,7 +178,7 @@ class Bundler extends events_1.EventEmitter {
      * @hidden
      */
     build(type) {
-        let bundle = this.bundle[type];
+        let bundle = this.styles[type];
         if (bundle) {
             return bundle;
         }
@@ -188,7 +188,7 @@ class Bundler extends events_1.EventEmitter {
         let mapper = (asset) => {
             return asset.data;
         };
-        return this.bundle[type] = Array.from(this.assets.values()).filter(filter).map(mapper).reverse().join('\n');
+        return this.styles[type] = Array.from(this.assets.values()).filter(filter).map(mapper).reverse().join('\n');
     }
 }
 exports.Bundler = Bundler;

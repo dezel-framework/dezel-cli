@@ -20,7 +20,8 @@
 	},
 	"include": [
 		"**/*.ts",
-		"lib/devServerClient.js"
+		"lib/devServerClient.js",
+		"commands"
 	],
 	"exclude": [
 		"node_modules"

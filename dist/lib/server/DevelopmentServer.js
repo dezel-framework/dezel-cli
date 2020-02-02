@@ -18,7 +18,7 @@ const http_1 = __importDefault(require("http"));
 const ws_1 = require("ws");
 const getDefaultServerHost_1 = require("./network/getDefaultServerHost");
 const getDefaultServerPort_1 = require("./network/getDefaultServerPort");
-const Bundler_1 = require("./bundler/Bundler");
+const DevelopmentBundler_1 = require("./bundler/DevelopmentBundler");
 /**
  * @class DevelopmentServer
  * @since 0.1.0
@@ -43,12 +43,27 @@ class DevelopmentServer {
         ]).then(([defaultHost, defaultPort]) => {
             this.host = defaultHost;
             this.port = defaultPort;
+            let devServer = {
+                host: this.host,
+                port: this.port,
+                publicPath: this.publicPath,
+                outputName: this.outputName
+            };
             let options = {
+                file: this.file,
+                outputName: this.outputName,
+                outputPath: this.publicPath,
+                minify: false,
                 includes: [
                     path_1.default.join(__dirname, 'reload/client.js')
-                ]
+                ],
+                variables: {
+                    devServer: function () {
+                        return JSON.stringify(devServer);
+                    }
+                }
             };
-            this.bundler = new Bundler_1.Bundler(this, options);
+            this.bundler = new DevelopmentBundler_1.DevelopmentBundler(this, options);
             this.bundler.on('update', this.onBundlerUpdate.bind(this));
             this.bundler.on('error', this.onBundlerError.bind(this));
             this.start();
@@ -65,7 +80,8 @@ class DevelopmentServer {
                 this.bundler.resolve(req, res);
             });
             this.server.listen(this.port, this.host, () => {
-                console.log(chalk_1.default.green('Dezel development server started'));
+                console.log(chalk_1.default.green('Development server started'));
+                console.log('');
                 console.log(' -> Input file:  ' + chalk_1.default.blue(this.file));
                 console.log(' -> Host:        ' + chalk_1.default.blue(this.host));
                 console.log(' -> Port:        ' + chalk_1.default.blue(this.port));
